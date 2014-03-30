@@ -3,38 +3,150 @@
 namespace WCS;
 require_once 'Work-Cell-Scheduler/Config/global.php';
 
-class Person {
+class PersonApp {
+	private $person=NULL;
+	
+	function add(Person $person){
+		$this->person=$person;
+		return TRUE;
+	}
+	
+	function process($page){
+		$this->load();
+		$this->save();
+		echo $this->edit($page);
+	}
+	
+	function get(){
+		if($this->person===NULL){
+			$this->person=new Person();
+		}
+		if(!$this->person->setPerson($_REQUEST['person'])){
+			//print ":PersonApp.process: unable to set person |".$_REQUEST['person']."|");
+			return FALSE;
+		}
+		if(isset($_REQUEST['name']) and !$this->person->setName($_REQUEST['name'])){
+			//print ":PersonApp.process: unable to set person |".$_REQUEST['name']."|");
+			return FALSE;
+		}
+	}
+	
+	function load () {
+		if(!isset($_REQUEST['action'])){
+			return FALSE;
+		}
+		if($_REQUEST['action']!='Load'){
+			return FALSE;
+		}
+		$this->get();
+		if($this->person->read()===FALSE){
+			return FALSE;
+		}
+		return TRUE;
+	}
+	
+	function save(){
+		if($this->person===NULL){
+			$this->person=new Person();
+		}
+		if(!isset($_REQUEST['action'])){
+			return FALSE;
+		}
+		if($_REQUEST['action']!='Update'){
+			return FALSE;
+		}
+		$this->get();
+		if($this->person->delete()===FALSE){
+			print ":PersonApp.save: unable to delete()";
+			return FALSE;
+		}
+		if($this->person->write()===FALSE){
+			print ":PersonApp.save: unable to wirte()";
+			return FALSE;
+		}
+		return TRUE;
+	}
+	
+	function edit($action){
+		$person=htmlspecialchars($this->person->getPerson());
+		$name=htmlspecialchars($this->person->getName());
+		return <<<HTML
+		<form action="action" method="GET">
+		<table border="1">
+ 		  <tr><td>Person</td><td><input type="text" name="person" value="$person"></td></tr>
+     	  <tr><td>Name</td>  <td><input type="text" name="name"   value="$name"></td></tr>
+     	</table>
+ 		<input type="submit" name="action" value="Update">
+ 		<input type="submit" name="action" value="Load">
+ 		</form>
+HTML;
+	}
+}
 
+
+class Person {
+	private $person=NULL;
+	private $name=NULL;
+	private $rate=NULL;
+	
 	/**
 	 * Database handle
 	 * @var \mysqli
 	 */
-	private $db=NULL;
 	
-	public $person=NULL;
-	public $name=NULL;
-	public $rate=NULL;
+	static $db=NULL;
+	
+	
 
 	function __construct(){
-		//print "WCS/PersonApp>";
-		$this->db = new \mysqli(\WCS\Config::$dbhost,\WCS\Config::$dbuser,\WCS\Config::$dbpassword,\WCS\Config::$dbdatabase);
-		if($this->db===NULL){
-			die("Error unable to connect to database");
+		if(!is_null(self::$db)){
+			return;
 		}
+	
+	self::$db = @new \mysqli(\WCS\Config::$dbhost,\WCS\Config::$dbuser,\WCS\Config::$dbpassword,\WCS\Config::$dbdatabase);
+	if(self::$db->connect_error){
+		throw new \Exception("Error unable to connect to database: ".self::$db->connect_error);
+	}
+}
+	/**
+	 * Display Person
+	 * @return string human readable display.
+	 */
+	function display(){
+		$str="{person: $this->person";
+		if(!is_null($this->name)){
+			$str.=" name: $this->name";
+		}
+		return $str.'}';
 	}
 	
-	function __destruct() {
-		if($this->db!=NULL){
-			$this->db->close();
-		}
-	}
-	
+	public function insert() {
+	$stmt=$this->db->prepare("INSERT INTO Person (person,name,rate) VALUES (?,?,?)");
+			if($stmt===FALSE){
+			error_log("WCS/Person.insert> stmt:".$this->db->error);
+			return FALSE;
+			}
+			if($stmt->bind_param('ssd',$this->person,$this->name,$this->rate)===FALSE){
+			error_log("WCS/Person.insert> bind_param:".$this->db->error);
+			return FALSE;
+			}
+			if($stmt->execute()===FALSE){
+			if($this->db->errno==1062){ // Duplicate.
+				return FALSE;
+			}
+			error_log("WCS/Person.insert> execute:".$this->db->errno." ".$this->db->error);
+			return FALSE;
+			}
+			return TRUE;
+			}
+
 	/**
 	 * Set person
 	 * @param string $person Alphanumeric username [a-zA-Z0-9]
 	 * @return bool person set.
 	 */
-	public function setPerson($person){
+	function setPerson($person){
+		//print ":Person.setPerson: |$person|".gettype($person);
 		if(preg_match('/^[a-zA-Z0-9]+$/',$person)){
 			$this->person=$person;
 			return TRUE;
@@ -45,86 +157,89 @@ class Person {
 	/**
 	 * Set name
 	 * @param string $name Persons name
-	 * @return bool name set.
 	 */
-	public function setName($name){
+	function setName($name){
+		if(preg_match('/^\s*$/',$name)){
+			return FALSE;
+		}
 		$this->name=$name;
 		return TRUE;
 	}
 	
-	/**
-	 * Display Person
-	 * @return string human readable display.
-	 */
-	public function display(){
-		$name='';
-		if(!\is_null($this->name)){
-			$name=" name: $this->name";
-		}
-		return "{person: $this->person".$name."}";
+	function getName(){
+		return $this->name;
 	}
-
-	public function insert() {
-		$stmt=$this->db->prepare("INSERT INTO Person (person,name,rate) VALUES (?,?,?)");
+	
+	function getPerson(){
+		return $this->person;
+	}
+	
+	function write(){
+		$stmt=self::$db->prepare("INSERT INTO Person (person,name) VALUES (?,?)");
 		if($stmt===FALSE){
-			error_log("WCS/Person.insert> stmt:".$this->db->error);
-			return FALSE;
+			die("Person.write: unable to create statement " . self::$db->error);
+			return False;
 		}
-		if($stmt->bind_param('ssd',$this->person,$this->name,$this->rate)===FALSE){
-			error_log("WCS/Person.insert> bind_param:".$this->db->error);
-			return FALSE;
+		if($stmt->bind_param("ss",$this->person,$this->name)===FALSE){
+			die("Perosn.write: unable to bind " . self::$db->error);
 		}
 		if($stmt->execute()===FALSE){
-			if($this->db->errno==1062){ // Duplicate.
-				return FALSE;
-			}
-			error_log("WCS/Person.insert> execute:".$this->db->errno." ".$this->db->error);
-			return FALSE;
+			if($stmt->errno==1062){
+ 				$stmt->close();
+ 				self::$db->close();
+ 				return FALSE;
+ 			}
+ 			die("Person.write: unable to execute self::$db->errno self::$db->error");
+ 			return FALSE;
 		}
+		$stmt->close();
 		return TRUE;
 	}
-
+	
 	/**
 	 * Remove Person
 	 * @return bool TRUE on success (even if record did not exist);
 	 */
-	public function delete() {
-		$stmt=$this->db->prepare("DELETE FROM Person WHERE person=?");
+	function delete() {
+		$stmt=self::$db->prepare("DELETE FROM Person WHERE person=?");
 		if($stmt===FALSE){
-			error_log("WCS/Person.delete> stmt:".$this->db->error);
 			return FALSE;
 		}
 		if($stmt->bind_param('s',$this->person)===FALSE){
-			error_log("WCS/Person.delete> bind_param:".$this->db->error);
+			die("WCS/Person.delete> bind_param:".self::$db->error);
 			return FALSE;
 		}
 		if($stmt->execute()===FALSE){
-			error_log("WCS/Person.delete> execute:".$this->db->errno." ".$this->db->error);
+			die("WCS/Person.delete> execute:".self::$db->errno." ".$this->db->error);
 			return FALSE;
 		}
 		return TRUE;
 	}
 	
-	public function get() {
-		$stmt=$this->db->prepare("SELECT name,rate FROM Person WHERE person=?");
+	function read() {
+		$stmt=self::$db->prepare("SELECT name,rate FROM Person WHERE person=?");
 		if($stmt===FALSE){
-			error_log("WCS/Person.get> stmt:".$this->db->error);
+			die("Person.get: unable to create statement " . self::$db->error);
 			return FALSE;
 		}
-		
 		if($stmt->bind_param('s',$this->person)===FALSE){
-			error_log("WCS/Person.get> bind_param:".$this->db->error);
+			die("Person.get: unable to bind_param:" . self::$db->error);
 			return FALSE;
 		}
 		if($stmt->bind_result($this->name,$this->rate)===FALSE){
-			error_log("WCS/Person.get> bind_result:".$this->db->error);
+			die("Person.get: unable to bind_result:" . self::$db->error);
 			return FALSE;
 		}
 		if($stmt->execute()===FALSE){
-			error_log("WCS/Person.get> bind_result:".$this->db->error);
+			die("Person.get: unable to execute self::$db->errno self::$db->error");
 			return FALSE;
 		}
-		return $stmt->fetch();
+		if($stmt->fetch()==FALSE){
+			$stmt->close();
+			return FALSE;
+		}
+		//print "Person.get: ".$this->display();
+		return TRUE;
 	}
 		
 }

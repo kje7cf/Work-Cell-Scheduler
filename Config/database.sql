@@ -9,6 +9,12 @@ CREATE TABLE Person (
   PRIMARY KEY (person)
 );
 
+INSERT INTO Person (person,name,rate) VALUES
+	(DrMiddelkoop, Dr. Middelkoop, .8),
+	(JD, J. D., .5);
+
+--SELECT * FROM Person;
+
 -- Training Matrix
 DROP TABLE IF EXISTS TrainingMatrix;
 CREATE TABLE TrainingMatrix (
